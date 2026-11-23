@@ -1,0 +1,79 @@
+let starting = false;
+
+async function startProctoredAttempt(preserveCurrentOrder = false) {
+    if (active) return true;
+    if (starting) return false;
+
+    starting = true;
+
+    try {
+        syncStudentProfile();
+
+        if (config.camera) {
+            const camOk = await startCameraProctoring();
+
+            if (!camOk) {
+                stopCameraProctoring();
+
+                openConfirmModal({
+                    title: 'Bắt buộc bật Camera để làm bài',
+                    message: cameraErrorMessage(),
+                    confirmText: 'Cho phép & thử lại',
+                    onConfirm: () =>
+                        startProctoredAttempt(preserveCurrentOrder)
+                });
+
+                return false;
+            }
+        }
+
+        if (!preserveCurrentOrder &&
+            config.shuffle &&
+            appState.questions.length > 1) {
+            appState.questions = shuffleArray(appState.questions);
+        }
+
+        appState.userAnswers = {};
+        appState.flaggedQuestions = {};
+        appState.currentQIndex = 0;
+        appState.showInstantExplain = false;
+        appState.timerSeconds = appState.totalExamSeconds;
+        appState.timerPaused = false;
+
+        activateProtection();
+        updateTimerUI();
+        renderExamView();
+
+        return true;
+
+    } finally {
+        starting = false;
+    }
+}
+
+async function onCameraLost() {
+    if (!active) return;
+
+    cameraStream = null;
+
+    triggerViolation(
+        'Camera bị tắt hoặc mất kết nối',
+        true
+    );
+
+    const ok = await startCameraProctoring();
+
+    if (!active) {
+        stopCameraProctoring();
+        return;
+    }
+
+    if (!ok) {
+        showToast(
+            'Không thể bật lại Camera — hệ thống tự động nộp bài!',
+            'warning'
+        );
+
+        computeReportFromExamAttempt(true);
+    }
+}
